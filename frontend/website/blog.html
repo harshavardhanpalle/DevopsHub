@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevOps Blog | Posts</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="navbar">
+      <div class="logo">Ops<span>Notes</span></div>
+      <button class="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
+      <nav>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="blog.html">Blog</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>All Posts</h2>
+
+      <!-- Search/category filter bar -- talks to /api/articles and
+           /api/categories via the gateway. -->
+      <div class="filter-bar">
+        <input type="text" id="search-input" placeholder="Search articles..." />
+        <select id="category-filter">
+          <option value="">All categories</option>
+        </select>
+      </div>
+
+      <!-- Single-article view, shown instead of the grid when the URL has
+           ?article=<id> (see wireArticleDetail in script.js). -->
+      <div class="article-detail" id="article-detail" style="display:none;"></div>
+
+      <!-- Populated from /api/articles by script.js. If the backend is
+           unreachable, an explanatory message is shown here instead of the
+           previous static hardcoded cards (kept the same 6 posts as
+           default seed data isn't guaranteed at first boot). -->
+      <div class="grid" id="dynamic-articles-grid">
+        <p>Loading articles...</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 OpsNotes DevOps Blog. Built with HTML, CSS &amp; JS. Deployed via Terraform + Docker + Jenkins.</p>
+  </footer>
+
+  <script src="api.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

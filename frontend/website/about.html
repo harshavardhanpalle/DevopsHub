@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevOps Blog | About</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="navbar">
+      <div class="logo">Ops<span>Notes</span></div>
+      <button class="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
+      <nav>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="blog.html">Blog</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>About This Project</h2>
+      <div class="about-grid">
+        <div>
+          <p>
+            This site is a static DevOps blog built to demonstrate an
+            end-to-end automated deployment pipeline: a website packaged into
+            a Docker image, infrastructure provisioned on AWS with Terraform,
+            and deployment automated with a Jenkins CI/CD pipeline.
+          </p>
+          <p style="margin-top: 1rem;">
+            Every push to the GitHub repository triggers Jenkins to build a
+            new Docker image, push it to Docker Hub, apply the Terraform
+            infrastructure, and roll out the updated container on an EC2
+            instance running Nginx.
+          </p>
+        </div>
+        <div>
+          <h3 style="margin-bottom: 0.75rem;">Technology Stack</h3>
+          <ul class="stack-list">
+            <li><strong>Frontend:</strong> HTML5, CSS3, JavaScript</li>
+            <li><strong>Web Server:</strong> Nginx (Alpine)</li>
+            <li><strong>Containerization:</strong> Docker &amp; Docker Compose</li>
+            <li><strong>Infrastructure as Code:</strong> Terraform (AWS Provider v5+)</li>
+            <li><strong>Cloud Platform:</strong> AWS (VPC, EC2, Security Groups)</li>
+            <li><strong>CI/CD:</strong> Jenkins Declarative Pipeline</li>
+            <li><strong>Registry:</strong> Docker Hub</li>
+            <li><strong>Source Control:</strong> Git &amp; GitHub</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Pipeline Overview</h2>
+      <div class="card">
+        <p>
+          Developer &rarr; GitHub &rarr; Webhook &rarr; Jenkins &rarr; Docker
+          Build &rarr; Docker Hub &rarr; Terraform Apply &rarr; EC2 Deployment
+          &rarr; Health Check &rarr; Live Website
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 OpsNotes DevOps Blog. Built with HTML, CSS &amp; JS. Deployed via Terraform + Docker + Jenkins.</p>
+  </footer>
+
+  <script src="api.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevOps Blog | Home</title>
+  <meta name="description" content="A DevOps blog covering Linux, AWS, Terraform, Docker, Kubernetes and CI/CD with Jenkins." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="navbar">
+      <div class="logo">Ops<span>Notes</span></div>
+      <button class="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
+      <nav>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="blog.html">Blog</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="badges">
+      <span class="badge">Terraform</span>
+      <span class="badge">Docker</span>
+      <span class="badge">AWS</span>
+      <span class="badge">Jenkins</span>
+      <span class="badge">Nginx</span>
+    </div>
+    <h1>Notes from the trenches of DevOps</h1>
+    <p>
+      A static blog about Linux, AWS, Terraform, Docker, Kubernetes and
+      building CI/CD pipelines with Jenkins &mdash; containerized, provisioned
+      as code, and shipped automatically.
+    </p>
+    <a href="blog.html" class="btn">Read the Blog</a>
+    <a href="about.html" class="btn btn-outline">About this project</a>
+  </section>
+
+  <main>
+    <section>
+      <h2>Latest Posts</h2>
+      <!-- Populated from /api/articles by script.js when the backend is
+           reachable; these hardcoded cards remain as a fallback otherwise. -->
+      <div class="grid" id="latest-posts-grid">
+        <div class="card">
+          <span class="tag">Linux</span>
+          <h3>Linux Basics for DevOps Engineers</h3>
+          <p>Core commands, permissions, and process management every engineer should know.</p>
+        </div>
+        <div class="card">
+          <span class="tag">AWS</span>
+          <h3>Getting Started with AWS Services</h3>
+          <p>An overview of EC2, VPC, S3, and IAM for building cloud infrastructure.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Terraform</span>
+          <h3>Terraform Fundamentals</h3>
+          <p>Providers, state, resources, and modules explained with practical examples.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Docker</span>
+          <h3>Docker &amp; Containers 101</h3>
+          <p>Images, containers, Dockerfiles, and Docker Compose for local development.</p>
+        </div>
+        <div class="card">
+          <span class="tag">Kubernetes</span>
+          <h3>Kubernetes Introduction</h3>
+          <p>Pods, deployments, and services &mdash; the building blocks of container orchestration.</p>
+        </div>
+        <div class="card">
+          <span class="tag">CI/CD</span>
+          <h3>CI/CD with Jenkins</h3>
+          <p>Building declarative pipelines that build, test, and deploy automatically.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 OpsNotes DevOps Blog. Built with HTML, CSS &amp; JS. Deployed via Terraform + Docker + Jenkins.</p>
+  </footer>
+
+  <script src="api.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
