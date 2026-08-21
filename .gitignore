@@ -3,3 +3,4 @@
 docker-compose.yml.bak
 __pycache__/
    *.pyc
+.venv/
