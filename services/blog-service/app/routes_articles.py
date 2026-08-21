@@ -62,14 +62,19 @@ def create_article(
     db: Session = Depends(get_db),
     current_user_id: uuid.UUID = Depends(get_current_user_id),
 ):
+    article_id = uuid.uuid4()
+
     article = Article(
+        id=article_id,
         title=payload.title,
         summary=payload.summary,
         content=payload.content,
         category_id=payload.category_id,
         author_id=current_user_id,
     )
-    article.slug = _slugify(payload.title, article.id)
+
+    article.slug = _slugify(payload.title, article_id)
+
     db.add(article)
     db.commit()
     db.refresh(article)
