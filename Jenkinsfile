@@ -144,6 +144,22 @@ pipeline {
                 }
             }
         }
+        // ========================================================
+        // TERRAFORM - PROVISION / UPDATE AWS INFRASTRUCTURE
+        // ========================================================
+        stage('Terraform Provision Infrastructure') {
+           steps {
+               dir(TF_DIR) {
+                    sh '''
+                        set -e
+                        terraform init -input=false
+                        terraform validate
+                        terraform plan -input=false -out=tfplan
+                        terraform apply -input=false -auto-approve tfplan
+                    '''
+                }
+            }
+        }
 
         // Build only the 6 images the existing architecture actually
         // deploys (matches infrastructure/terraform/main.tf's ecr_repo_names / the 6
