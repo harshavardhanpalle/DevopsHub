@@ -1,6 +1,38 @@
+# Backup files
 *.backup
 *.before-*
-docker-compose.yml.bak
+*.bak
+
+# Python
 __pycache__/
-   *.pyc
+*.py[cod]
 .venv/
+.venv-ci/
+
+# Terraform local working files
+**/.terraform/*
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Terraform plan files
+*.tfplan
+tfplan
+
+# Terraform variable files containing local secrets
+*.tfvars.local
+
+# OS files
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+
+# Jenkins workspace temporary files
+workspace/

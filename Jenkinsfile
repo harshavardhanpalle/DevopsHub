@@ -1,22 +1,40 @@
 // ============================================================
-// DevOpsHub -- Stage 3 CI/CD pipeline
+// DevOpsHub - Complete CI/CD Pipeline
 //
-// GitHub -> Jenkins -> Tests -> Docker Build -> Amazon ECR -> ECS
-// Deployment -> ECS Fargate -> Application Load Balancer
+// ONE CLICK WORKFLOW:
 //
-// Replaces the Stage 1 Docker Hub + SSH-to-EC2 pipeline. That path is
-// gone because Stage 2 replaced the single EC2 instance with 6 ECS
-// Fargate services behind an ALB (see IMPLEMENTATION_STATUS.md /
-// infrastructure/terraform/main.tf) -- there is no longer an EC2 host to SSH into, and
-// Docker Hub was explicitly replaced by Amazon ECR.
-//
-// This file does NOT touch infrastructure/terraform/*.tf. Terraform is assumed to have
-// already been applied once (creating the ECR repos, ECS cluster,
-// services, and ALB that this pipeline pushes into / deploys onto).
-// See EXACT NEXT STEP in IMPLEMENTATION_STATUS.md for that one-time step.
+// Jenkins Build Now
+//      |
+//      v
+// Checkout Source
+//      |
+//      v
+// Validate Required Files
+//      |
+//      v
+// Run Python Tests
+//      |
+//      v
+// Terraform Provision Infrastructure
+//      |
+//      v
+// Docker Build - 6 Services
+//      |
+//      v
+// Amazon ECR Login + Push
+//      |
+//      v
+// Terraform Deploy ECS With New Image Tag
+//      |
+//      v
+// Wait For ECS Stability
+//      |
+//      v
+// ALB Health Check
 // ============================================================
 
 pipeline {
+
     agent any
 
     options {
@@ -25,118 +43,126 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '15'))
     }
 
-    // ------------------------------------------------------------
-    // Required Jenkins credential IDs (configure in Jenkins ->
-    // Manage Jenkins -> Credentials before running this pipeline):
-    //
-    //   aws-credentials   -- "AWS Credentials" kind (or username/password
-    //                        holding AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
-    //                        for an IAM principal allowed to: ecr:GetAuthorizationToken,
-    //                        ecr:*Image*/BatchGetImage/PutImage on the 6 repos,
-    //                        ecs:UpdateService/DescribeServices/RegisterTaskDefinition/
-    //                        DescribeTaskDefinition, and iam:PassRole for the two
-    //                        task roles in infrastructure/terraform/modules/iam.
-    //
-    // Required Jenkins global / job environment variables (Manage Jenkins ->
-    // System, or folder-level "Environment variables"):
-    //
-    //   AWS_ACCOUNT_ID     -- 12-digit AWS account ID that owns the ECR repos/ECS cluster
-    //   AWS_DEFAULT_REGION -- must match infrastructure/terraform/terraform.tfvars aws_region (ap-south-1)
-    //
-    // Nothing else needs to be configured: ECR repo names, the ECS cluster
-    // name, and each service/task-family name are all derived below from
-    // PROJECT_NAME using the exact naming convention Terraform itself uses
-    // (infrastructure/terraform/modules/ecr/main.tf, infrastructure/terraform/modules/ecs_cluster/main.tf,
-    // infrastructure/terraform/modules/ecs_service/main.tf), so this file never hardcodes an
-    // account-specific ARN or URL.
-    // ------------------------------------------------------------
-
     environment {
-        AWS_CREDENTIALS_ID = 'aws-credentials'
-        PROJECT_NAME        = 'devopshub'
-        AWS_DEFAULT_REGION  = "${env.AWS_DEFAULT_REGION ?: 'ap-south-1'}"
-        ECR_REGISTRY         = "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_DEFAULT_REGION ?: 'ap-south-1'}.amazonaws.com"
-        ECS_CLUSTER           = "${PROJECT_NAME}-cluster"
-        TF_DIR                 = 'infrastructure/terraform'
 
-        // Immutable tag: git commit SHA is the primary identifier so an
-        // image can always be traced back to the exact commit it was built
-        // from; build number is appended for human-readable uniqueness on
-        // reruns of the same commit (e.g. a Jenkins retry).
-        IMAGE_TAG = "${env.GIT_COMMIT ? env.GIT_COMMIT.take(12) : 'nogit'}-${env.BUILD_NUMBER}"
+        // Jenkins AWS credential ID.
+        AWS_CREDENTIALS_ID = 'aws-credentials'
+
+        // Project naming.
+        PROJECT_NAME = 'devopshub'
+
+        // AWS deployment region.
+        AWS_DEFAULT_REGION = 'ap-south-1'
+
+        // Terraform directory.
+        TF_DIR = 'infrastructure/terraform'
     }
 
     stages {
 
+        // ========================================================
+        // 1. CHECKOUT
+        // ========================================================
+
         stage('Checkout') {
             steps {
                 checkout scm
+
                 script {
-                    // checkout scm above does not always populate env.GIT_COMMIT
-                    // (depends on the configured SCM step type), so read it
-                    // directly from git as a fallback for the IMAGE_TAG above.
-                    if (!env.GIT_COMMIT) {
-                        env.GIT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-                    }
-                    env.IMAGE_TAG = "${env.GIT_COMMIT.take(12)}-${env.BUILD_NUMBER}"
-                    echo "Building commit ${env.GIT_COMMIT}, image tag: ${env.IMAGE_TAG}"
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short=12 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.IMAGE_TAG =
+                        "${env.GIT_COMMIT_SHORT}-${env.BUILD_NUMBER}"
+
+                    echo "Git commit: ${env.GIT_COMMIT_SHORT}"
+                    echo "Image tag: ${env.IMAGE_TAG}"
                 }
             }
         }
 
-        // Fail fast if a required project file has gone missing, instead of
-        // discovering it partway through the Docker build stage.
+        // ========================================================
+        // 2. VALIDATE REQUIRED FILES
+        // ========================================================
+
         stage('Validate Required Files') {
             steps {
                 sh '''
                     set -e
+
                     required_files="
-                        frontend/Dockerfile
-                        nginx/Dockerfile
-                        services/user-service/Dockerfile
-                        services/blog-service/Dockerfile
-                        services/category-service/Dockerfile
-                        services/notification-service/Dockerfile
-                        docker-compose.yml
-                        infrastructure/terraform/main.tf
+                    frontend/Dockerfile
+                    nginx/Dockerfile
+                    services/user-service/Dockerfile
+                    services/blog-service/Dockerfile
+                    services/category-service/Dockerfile
+                    services/notification-service/Dockerfile
+                    docker-compose.yml
+                    infrastructure/terraform/main.tf
+                    infrastructure/terraform/provider.tf
+                    infrastructure/terraform/variables.tf
+                    infrastructure/terraform/outputs.tf
+                    infrastructure/terraform/modules/ecs_cluster/main.tf
+                    infrastructure/terraform/modules/ecs_cluster/variables.tf
                     "
+
                     missing=0
+
                     for f in $required_files; do
-                        if [ ! -e "$f" ]; then
+                        if [ ! -f "$f" ]; then
                             echo "MISSING REQUIRED FILE: $f"
                             missing=1
                         fi
                     done
+
                     if [ "$missing" -eq 1 ]; then
-                        echo "One or more required files are missing. Aborting."
+                        echo "One or more required files are missing."
                         exit 1
                     fi
-                    echo "All required files present."
+
+                    echo "All required files are present."
                 '''
             }
         }
 
-        // Each Python microservice's tests are self-contained (SQLite
-        // DATABASE_URL override, no external Postgres/SQS needed -- see
-        // */tests/test_*.py). gateway and frontend are static
-        // nginx/HTML with no test suite, so they are built but not tested
-        // here.
+        // ========================================================
+        // 3. RUN TESTS
+        // ========================================================
+
         stage('Run Tests') {
             steps {
                 script {
-                    def services = ['user-service', 'blog-service', 'category-service', 'notification-service']
+
+                    def services = [
+                        'user-service',
+                        'blog-service',
+                        'category-service',
+                        'notification-service'
+                    ]
+
                     for (svc in services) {
+
                         dir("services/${svc}") {
+
                             sh """
                                 set -e
+
                                 python3 -m venv .venv-ci
+
                                 . .venv-ci/bin/activate
+
                                 pip install -q --upgrade pip
+
                                 pip install -q -r requirements.txt
-                                DATABASE_URL=sqlite:///./test_${svc.replace('-', '_')}.db \
-                                JWT_SECRET=ci-test-secret \
+
+                                DATABASE_URL=sqlite:///./test_${svc.replace('-', '_')}.db \\
+                                JWT_SECRET=ci-test-secret \\
                                 python -m pytest -q
+
                                 deactivate
+
                                 rm -rf .venv-ci
                             """
                         }
@@ -144,204 +170,427 @@ pipeline {
                 }
             }
         }
+
         // ========================================================
-        // TERRAFORM - PROVISION / UPDATE AWS INFRASTRUCTURE
+        // 4. TERRAFORM - CREATE / UPDATE INFRASTRUCTURE
+        //
+        // This creates:
+        //
+        // VPC
+        // Subnets
+        // NAT Gateway
+        // Security Groups
+        // ECR Repositories
+        // SQS
+        // Secrets Manager
+        // RDS
+        // IAM Roles
+        // ECS Cluster
+        // Service Connect Namespace
+        // Application Load Balancer
+        // ECS Services
         // ========================================================
+
         stage('Terraform Provision Infrastructure') {
-           steps {
-               dir(TF_DIR) {
-                    sh '''
-                        set -e
-                        terraform init -input=false
-                        terraform validate
-                        terraform plan -input=false -out=tfplan
-                        terraform apply -input=false -auto-approve tfplan
-                    '''
+            steps {
+
+                dir(TF_DIR) {
+
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: AWS_CREDENTIALS_ID
+                    ]]) {
+
+                        sh '''
+                            set -e
+
+                            echo "========================================="
+                            echo "Terraform Initialization"
+                            echo "========================================="
+
+                            terraform init -input=false
+
+                            echo "========================================="
+                            echo "Terraform Formatting Check"
+                            echo "========================================="
+
+                            terraform fmt -check -recursive
+
+                            echo "========================================="
+                            echo "Terraform Validation"
+                            echo "========================================="
+
+                            terraform validate
+
+                            echo "========================================="
+                            echo "Terraform Plan"
+                            echo "========================================="
+
+                            terraform plan \
+                                -input=false \
+                                -out=tfplan
+
+                            echo "========================================="
+                            echo "Terraform Apply"
+                            echo "========================================="
+
+                            terraform apply \
+                                -input=false \
+                                -auto-approve \
+                                tfplan
+                        '''
+                    }
                 }
             }
         }
 
-        // Build only the 6 images the existing architecture actually
-        // deploys (matches infrastructure/terraform/main.tf's ecr_repo_names / the 6
-        // ecs_service instantiations) -- no new containers, no new
-        // architecture. Reuses each service's existing Dockerfile as-is.
+        // ========================================================
+        // 5. READ ECR REGISTRY
+        // ========================================================
+
+        stage('Get AWS Account Information') {
+            steps {
+
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: AWS_CREDENTIALS_ID
+                ]]) {
+
+                    script {
+
+                        env.AWS_ACCOUNT_ID = sh(
+                            script: '''
+                                aws sts get-caller-identity \
+                                    --query Account \
+                                    --output text
+                            ''',
+                            returnStdout: true
+                        ).trim()
+
+                        env.ECR_REGISTRY =
+                            "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_DEFAULT_REGION}.amazonaws.com"
+
+                        echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
+                        echo "ECR Registry: ${env.ECR_REGISTRY}"
+                    }
+                }
+            }
+        }
+
+        // ========================================================
+        // 6. DOCKER BUILD
+        // ========================================================
+
         stage('Docker Build') {
             steps {
+
                 script {
+
                     def images = [
+
                         'frontend'             : 'frontend',
-                        'gateway'               : 'nginx',
-                        'user-service'          : 'services/user-service',
-                        'blog-service'          : 'services/blog-service',
-                        'category-service'      : 'services/category-service',
-                        'notification-service'  : 'services/notification-service',
+                        'gateway'              : 'nginx',
+                        'user-service'         : 'services/user-service',
+                        'blog-service'         : 'services/blog-service',
+                        'category-service'     : 'services/category-service',
+                        'notification-service' : 'services/notification-service'
                     ]
+
                     images.each { name, buildContext ->
-                        sh "docker build -t ${PROJECT_NAME}-${name}:${IMAGE_TAG} ${buildContext}"
-                    }
-                }
-            }
-        }
 
-        stage('ECR Login') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: AWS_CREDENTIALS_ID]]) {
-                    sh '''
-                        aws ecr get-login-password --region "$AWS_DEFAULT_REGION" \
-                          | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-                    '''
-                }
-            }
-        }
-
-        stage('Push to ECR') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: AWS_CREDENTIALS_ID]]) {
-                    script {
-                        def services = ['frontend', 'gateway', 'user-service', 'blog-service', 'category-service', 'notification-service']
-                        services.each { svc ->
-                            // Repo naming matches infrastructure/terraform/modules/ecr/main.tf exactly:
-                            // "${project_name}-${service}"
-                            def repo = "${ECR_REGISTRY}/${PROJECT_NAME}-${svc}"
-                            sh """
-                                docker tag ${PROJECT_NAME}-${svc}:${IMAGE_TAG} ${repo}:${IMAGE_TAG}
-                                docker tag ${PROJECT_NAME}-${svc}:${IMAGE_TAG} ${repo}:latest
-                                docker push ${repo}:${IMAGE_TAG}
-                                docker push ${repo}:latest
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        // Register a new task definition revision per service (image tag
-        // bump only -- family, cpu/memory, roles, env, secrets are all
-        // inherited from the currently running revision, which Terraform
-        // created) and point each ECS service at it. No Terraform apply
-        // happens here; this only updates the container image, which is
-        // exactly what infrastructure/terraform/main.tf's `var.image_tag` was designed to be
-        // overridden for by CI (see IMPLEMENTATION_STATUS.md EXACT NEXT
-        // STEP #4).
-        stage('Update ECS Task Definitions') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: AWS_CREDENTIALS_ID]]) {
-                    script {
-                        def services = ['frontend', 'gateway', 'user-service', 'blog-service', 'category-service', 'notification-service']
-                        services.each { svc ->
-                            def family = "${PROJECT_NAME}-${svc}"
-                            def repo = "${ECR_REGISTRY}/${PROJECT_NAME}-${svc}"
-                            sh """
-                                set -e
-                                CURRENT_TASK_DEF=\$(aws ecs describe-task-definition \
-                                    --task-definition ${family} \
-                                    --query 'taskDefinition' --output json)
-
-                                NEW_TASK_DEF=\$(echo "\$CURRENT_TASK_DEF" | python3 -c '
-import json, sys
-td = json.load(sys.stdin)
-for c in td["containerDefinitions"]:
-    if c["name"] == "${svc}":
-        c["image"] = "${repo}:${IMAGE_TAG}"
-for key in ["taskDefinitionArn","revision","status","requiresAttributes",
-            "compatibilities","registeredAt","registeredBy"]:
-    td.pop(key, None)
-print(json.dumps(td))
-')
-                                echo "\$NEW_TASK_DEF" > taskdef-${svc}.json
-                                aws ecs register-task-definition \
-                                    --cli-input-json "file://taskdef-${svc}.json" > /dev/null
-                                rm -f taskdef-${svc}.json
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to ECS') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: AWS_CREDENTIALS_ID]]) {
-                    script {
-                        def services = ['frontend', 'gateway', 'user-service', 'blog-service', 'category-service', 'notification-service']
-                        services.each { svc ->
-                            def family = "${PROJECT_NAME}-${svc}"
-                            sh """
-                                aws ecs update-service \
-                                    --cluster ${ECS_CLUSTER} \
-                                    --service ${family} \
-                                    --task-definition ${family} \
-                                    --force-new-deployment > /dev/null
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Wait for ECS Stability') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: AWS_CREDENTIALS_ID]]) {
-                    script {
-                        def services = ['frontend', 'gateway', 'user-service', 'blog-service', 'category-service', 'notification-service']
-                        def serviceNames = services.collect { "${PROJECT_NAME}-${it}" }.join(' ')
-                        // `aws ecs wait services-stable` times out at 10 min by
-                        // default; if it fails, surface it but let the health
-                        // check stage make the final pass/fail call rather than
-                        // failing the whole pipeline on a slow-but-fine rollout.
                         sh """
-                            aws ecs wait services-stable --cluster ${ECS_CLUSTER} --services ${serviceNames} \
-                              || echo "WARNING: services-stable wait did not confirm steady state in time -- continuing to health check"
+                            set -e
+
+                            echo "========================================="
+                            echo "Building ${name}"
+                            echo "========================================="
+
+                            docker build \
+                                -t ${PROJECT_NAME}-${name}:${IMAGE_TAG} \
+                                ${buildContext}
                         """
                     }
                 }
             }
         }
 
-        // Read the ALB DNS name from Terraform state (already-applied
-        // Stage 2 infra) rather than hardcoding it, and hit the live site
-        // through the ALB -- the same path a real user takes.
-        stage('Post-Deployment Health Check') {
+        // ========================================================
+        // 7. LOGIN TO AMAZON ECR
+        // ========================================================
+
+        stage('ECR Login') {
             steps {
+
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: AWS_CREDENTIALS_ID
+                ]]) {
+
+                    sh '''
+                        set -e
+
+                        aws ecr get-login-password \
+                            --region "$AWS_DEFAULT_REGION" \
+                        | docker login \
+                            --username AWS \
+                            --password-stdin \
+                            "$ECR_REGISTRY"
+                    '''
+                }
+            }
+        }
+
+        // ========================================================
+        // 8. PUSH ALL IMAGES TO ECR
+        // ========================================================
+
+        stage('Push Images to ECR') {
+            steps {
+
+                script {
+
+                    def services = [
+                        'frontend',
+                        'gateway',
+                        'user-service',
+                        'blog-service',
+                        'category-service',
+                        'notification-service'
+                    ]
+
+                    services.each { svc ->
+
+                        def repository =
+                            "${ECR_REGISTRY}/${PROJECT_NAME}-${svc}"
+
+                        sh """
+                            set -e
+
+                            echo "========================================="
+                            echo "Pushing ${svc}"
+                            echo "========================================="
+
+                            docker tag \
+                                ${PROJECT_NAME}-${svc}:${IMAGE_TAG} \
+                                ${repository}:${IMAGE_TAG}
+
+                            docker tag \
+                                ${PROJECT_NAME}-${svc}:${IMAGE_TAG} \
+                                ${repository}:latest
+
+                            docker push ${repository}:${IMAGE_TAG}
+
+                            docker push ${repository}:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        // ========================================================
+        // 9. TERRAFORM - DEPLOY ECS WITH NEW IMAGE TAG
+        //
+        // Terraform updates all ECS task definitions so every
+        // service uses this Jenkins build's immutable image tag.
+        // ========================================================
+
+        stage('Deploy New Images to ECS') {
+            steps {
+
                 dir(TF_DIR) {
+
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: AWS_CREDENTIALS_ID
+                    ]]) {
+
+                        sh '''
+                            set -e
+
+                            echo "========================================="
+                            echo "Deploying Image Tag to ECS"
+                            echo "Image Tag: '"$IMAGE_TAG"'"
+                            echo "========================================="
+
+                            terraform plan \
+                                -input=false \
+                                -var="image_tag=$IMAGE_TAG" \
+                                -out=deploy-tfplan
+
+                            terraform apply \
+                                -input=false \
+                                -auto-approve \
+                                deploy-tfplan
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ========================================================
+        // 10. GET ECS CLUSTER NAME
+        // ========================================================
+
+        stage('Get Deployment Information') {
+            steps {
+
+                dir(TF_DIR) {
+
                     script {
+
+                        env.ECS_CLUSTER = sh(
+                            script: 'terraform output -raw ecs_cluster_name',
+                            returnStdout: true
+                        ).trim()
+
                         env.ALB_DNS_NAME = sh(
                             script: 'terraform output -raw alb_dns_name',
                             returnStdout: true
                         ).trim()
+
+                        echo "ECS Cluster: ${env.ECS_CLUSTER}"
+                        echo "ALB DNS: ${env.ALB_DNS_NAME}"
                     }
                 }
+            }
+        }
+
+        // ========================================================
+        // 11. WAIT FOR ECS SERVICES
+        // ========================================================
+
+        stage('Wait for ECS Stability') {
+            steps {
+
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: AWS_CREDENTIALS_ID
+                ]]) {
+
+                    sh '''
+                        set -e
+
+                        echo "========================================="
+                        echo "Waiting for ECS Services"
+                        echo "========================================="
+
+                        aws ecs wait services-stable \
+                            --region "$AWS_DEFAULT_REGION" \
+                            --cluster "$ECS_CLUSTER" \
+                            --services \
+                                "${PROJECT_NAME}-frontend" \
+                                "${PROJECT_NAME}-gateway" \
+                                "${PROJECT_NAME}-user-service" \
+                                "${PROJECT_NAME}-blog-service" \
+                                "${PROJECT_NAME}-category-service" \
+                                "${PROJECT_NAME}-notification-service"
+                    '''
+                }
+            }
+        }
+
+        // ========================================================
+        // 12. POST DEPLOYMENT HEALTH CHECK
+        // ========================================================
+
+        stage('Post-Deployment Health Check') {
+            steps {
+
                 sh '''
                     set -e
-                    echo "Checking ALB: http://$ALB_DNS_NAME/"
+
+                    echo "========================================="
+                    echo "Checking Live Application"
+                    echo "========================================="
+
+                    echo "URL: http://$ALB_DNS_NAME/"
+
                     ok=0
-                    for i in 1 2 3 4 5 6; do
-                        if curl -sSf -o /dev/null "http://$ALB_DNS_NAME/"; then
+
+                    for i in 1 2 3 4 5 6 7 8 9 10; do
+
+                        echo "Health check attempt $i..."
+
+                        if curl -sSf \
+                            -o /dev/null \
+                            "http://$ALB_DNS_NAME/"; then
+
                             ok=1
                             break
                         fi
-                        echo "Attempt $i: not healthy yet, retrying in 15s..."
+
+                        echo "Application not ready yet."
                         sleep 15
                     done
+
                     if [ "$ok" -ne 1 ]; then
-                        echo "Health check FAILED against http://$ALB_DNS_NAME/"
+
+                        echo "========================================="
+                        echo "DEPLOYMENT HEALTH CHECK FAILED"
+                        echo "========================================="
+
                         exit 1
                     fi
-                    echo "Health check PASSED against http://$ALB_DNS_NAME/"
+
+                    echo "========================================="
+                    echo "DEPLOYMENT HEALTH CHECK PASSED"
+                    echo "========================================="
                 '''
             }
         }
     }
 
+    // ============================================================
+    // POST BUILD ACTIONS
+    // ============================================================
+
     post {
+
         success {
-            echo "Deployment successful. Live site: http://${env.ALB_DNS_NAME}/  (image tag: ${env.IMAGE_TAG})"
+
+            script {
+
+                echo """
+============================================================
+
+DEPLOYMENT SUCCESSFUL
+
+Project: ${env.PROJECT_NAME}
+
+Image Tag:
+${env.IMAGE_TAG}
+
+Live Application:
+http://${env.ALB_DNS_NAME}/
+
+============================================================
+"""
+            }
         }
+
         failure {
-            echo "Pipeline failed. Check stage logs above."
+
+            echo """
+============================================================
+
+PIPELINE FAILED
+
+Check the failed Jenkins stage above.
+
+Terraform, Docker, ECR, ECS, or the application health
+check may contain the failure details.
+
+============================================================
+"""
         }
+
         always {
-            sh 'docker logout "$ECR_REGISTRY" || true'
+
+            sh '''
+                docker logout "$ECR_REGISTRY" || true
+
+                docker image prune -f || true
+            '''
         }
     }
 }
