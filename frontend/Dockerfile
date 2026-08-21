@@ -1,15 +1,9 @@
-# ---------------------------------------------------------
-# Dockerfile - DevOps Blog (static site served by Nginx)
-# ---------------------------------------------------------
 FROM nginx:alpine
 
-# Remove default nginx static assets
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copy custom nginx config (optional, gzip + caching tweaks)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy static site into nginx html directory
 COPY website/ /usr/share/nginx/html
 
 EXPOSE 80
