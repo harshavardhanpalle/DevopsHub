@@ -8,38 +8,39 @@
 #   docker compose build
 #   docker compose up
 #
-version: '3.8'
 
 services:
-
   postgres:
     image: postgres:16-alpine
     container_name: devopshub-postgres
     restart: unless-stopped
+
     environment:
       POSTGRES_USER: devopshub
       POSTGRES_PASSWORD: devopshub
       POSTGRES_DB: postgres
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/db-init:/docker-entrypoint-initdb.d
+
     ports:
       - "5432:5432"
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U devopshub"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Local SQS-compatible endpoint for development, so the app runs fully
-  # locally without real AWS credentials. Production points SQS_QUEUE_URL /
-  # SQS_ENDPOINT_URL at real Amazon SQS instead (see .env.example).
   local-sqs:
     image: softwaremill/elasticmq-native:1.5.7
     container_name: devopshub-local-sqs
     restart: unless-stopped
+
     ports:
       - "9324:9324"
+
     volumes:
       - ./scripts/local-sqs/elasticmq.conf:/opt/elasticmq.conf
 
@@ -47,6 +48,7 @@ services:
     build: ./services/user-service
     container_name: devopshub-user-service
     restart: unless-stopped
+
     environment:
       DATABASE_URL: postgresql+psycopg2://devopshub:devopshub@postgres:5432/userdb
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
@@ -54,11 +56,13 @@ services:
       AWS_REGION: ${AWS_REGION:-ap-south-1}
       SQS_ENDPOINT_URL: http://local-sqs:9324
       SQS_QUEUE_URL: http://local-sqs:9324/queue/notifications
+
     depends_on:
       postgres:
         condition: service_healthy
+
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8001/health').status==200 else sys.exit(1)"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -68,17 +72,20 @@ services:
     build: ./services/blog-service
     container_name: devopshub-blog-service
     restart: unless-stopped
+
     environment:
       DATABASE_URL: postgresql+psycopg2://devopshub:devopshub@postgres:5432/blogdb
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
       AWS_REGION: ${AWS_REGION:-ap-south-1}
       SQS_ENDPOINT_URL: http://local-sqs:9324
       SQS_QUEUE_URL: http://local-sqs:9324/queue/notifications
+
     depends_on:
       postgres:
         condition: service_healthy
+
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8002/health').status==200 else sys.exit(1)"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -88,14 +95,17 @@ services:
     build: ./services/category-service
     container_name: devopshub-category-service
     restart: unless-stopped
+
     environment:
       DATABASE_URL: postgresql+psycopg2://devopshub:devopshub@postgres:5432/categorydb
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+
     depends_on:
       postgres:
         condition: service_healthy
+
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8003/health').status==200 else sys.exit(1)"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8003/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -105,6 +115,7 @@ services:
     build: ./services/notification-service
     container_name: devopshub-notification-service
     restart: unless-stopped
+
     environment:
       DATABASE_URL: postgresql+psycopg2://devopshub:devopshub@postgres:5432/notificationdb
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
@@ -112,13 +123,15 @@ services:
       SQS_ENDPOINT_URL: http://local-sqs:9324
       SQS_QUEUE_URL: http://local-sqs:9324/queue/notifications
       SQS_POLL_WAIT_SECONDS: 10
+
     depends_on:
       postgres:
         condition: service_healthy
       local-sqs:
         condition: service_started
+
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8004/health').status==200 else sys.exit(1)"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8004/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -128,13 +141,19 @@ services:
     build: ./nginx
     container_name: devopshub-gateway
     restart: unless-stopped
+
     depends_on:
-      - user-service
-      - blog-service
-      - category-service
-      - notification-service
+      user-service:
+        condition: service_healthy
+      blog-service:
+        condition: service_healthy
+      category-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -144,12 +163,16 @@ services:
     build: ./frontend
     container_name: devopshub-frontend
     restart: unless-stopped
+
     ports:
       - "80:80"
+
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
+
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
