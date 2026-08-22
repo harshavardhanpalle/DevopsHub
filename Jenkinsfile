@@ -15,7 +15,7 @@ pipeline {
         TF_DIR = 'infrastructure/terraform'
 
         // Python 3.12 installed through pyenv
-        PYTHON_BIN = '/home/ubuntu/.pyenv/versions/3.12.14/bin/python3'
+        PYTHON_BIN = '/var/lib/jenkins/.pyenv/versions/3.12.14/bin/python3'
     }
 
     stages {
