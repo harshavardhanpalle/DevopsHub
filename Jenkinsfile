@@ -1,39 +1,4 @@
 ```groovy
-// ============================================================
-// DevOpsHub - Complete CI/CD Pipeline
-//
-// ONE CLICK WORKFLOW:
-//
-// Jenkins Build Now
-//      |
-//      v
-// Checkout Source
-//      |
-//      v
-// Validate Required Files
-//      |
-//      v
-// Run Python Tests
-//      |
-//      v
-// Terraform Provision Infrastructure
-//      |
-//      v
-// Docker Build - 6 Services
-//      |
-//      v
-// Amazon ECR Login + Push
-//      |
-//      v
-// Terraform Deploy ECS With New Image Tag
-//      |
-//      v
-// Wait For ECS Stability
-//      |
-//      v
-// ALB Health Check
-// ============================================================
-
 pipeline {
 
     agent any
@@ -45,21 +10,13 @@ pipeline {
     }
 
     environment {
-
-        // Jenkins AWS credential ID.
         AWS_CREDENTIALS_ID = 'aws-credentials'
-
-        // Project naming.
         PROJECT_NAME = 'devopshub'
-
-        // AWS deployment region.
         AWS_DEFAULT_REGION = 'ap-south-1'
-
-        // Terraform directory.
         TF_DIR = 'infrastructure/terraform'
 
-        // Python 3.12 installed through pyenv.
-        PYTHON_BIN = '/home/ubuntu/.pyenv/versions/3.12.14/bin/python'
+        // Python 3.12 installed through pyenv
+        PYTHON_BIN = '/home/ubuntu/.pyenv/versions/3.12.14/bin/python3'
     }
 
     stages {
@@ -70,18 +27,15 @@ pipeline {
 
         stage('Checkout') {
             steps {
-
                 checkout scm
 
                 script {
-
                     env.GIT_COMMIT_SHORT = sh(
                         script: 'git rev-parse --short=12 HEAD',
                         returnStdout: true
                     ).trim()
 
-                    env.IMAGE_TAG =
-                        "${env.GIT_COMMIT_SHORT}-${env.BUILD_NUMBER}"
+                    env.IMAGE_TAG = "${env.GIT_COMMIT_SHORT}-${env.BUILD_NUMBER}"
 
                     echo "Git commit: ${env.GIT_COMMIT_SHORT}"
                     echo "Image tag: ${env.IMAGE_TAG}"
@@ -95,7 +49,6 @@ pipeline {
 
         stage('Validate Required Files') {
             steps {
-
                 sh '''
                     set -e
 
@@ -118,23 +71,15 @@ pipeline {
                     missing=0
 
                     for f in $required_files; do
-
                         if [ ! -f "$f" ]; then
-
                             echo "MISSING REQUIRED FILE: $f"
-
                             missing=1
-
                         fi
-
                     done
 
                     if [ "$missing" -eq 1 ]; then
-
                         echo "One or more required files are missing."
-
                         exit 1
-
                     fi
 
                     echo "All required files are present."
@@ -143,47 +88,59 @@ pipeline {
         }
 
         // ========================================================
-        // 3. RUN TESTS
+        // 3. RUN PYTHON TESTS
         // ========================================================
 
         stage('Run Tests') {
-    steps {
-        dir('services/user-service') {
-            sh '''
-                set -e
+            steps {
+                dir('services/user-service') {
+                    sh '''
+                        set -e
 
-                /home/ubuntu/.pyenv/versions/3.12.14/bin/python3 -m venv .venv-ci
-                . .venv-ci/bin/activate
+                        echo "========================================="
+                        echo "Running Python Tests"
+                        echo "========================================="
 
-                python --version
+                        echo "Using Python:"
+                        "$PYTHON_BIN" --version
 
-                pip install --upgrade pip
-                pip install -r requirements.txt
+                        rm -rf .venv-ci
 
-                DATABASE_URL=sqlite:///./test_user_service.db \
-                JWT_SECRET=ci-test-secret \
-                python -m pytest -q
+                        "$PYTHON_BIN" -m venv .venv-ci
 
-                deactivate
-                rm -rf .venv-ci
-            '''
+                        . .venv-ci/bin/activate
+
+                        python --version
+
+                        python -m pip install --upgrade pip
+
+                        python -m pip install -r requirements.txt
+
+                        DATABASE_URL=sqlite:///./test_user_service.db \
+                        JWT_SECRET=ci-test-secret \
+                        python -m pytest -q
+
+                        deactivate
+
+                        rm -rf .venv-ci
+
+                        echo "Python tests completed successfully."
+                    '''
+                }
+            }
         }
-    }
-}
+
         // ========================================================
         // 4. TERRAFORM - CREATE / UPDATE INFRASTRUCTURE
         // ========================================================
 
         stage('Terraform Provision Infrastructure') {
             steps {
-
                 dir(TF_DIR) {
-
                     withCredentials([[
                         $class: 'AmazonWebServicesCredentialsBinding',
                         credentialsId: AWS_CREDENTIALS_ID
                     ]]) {
-
                         sh '''
                             set -e
 
@@ -233,14 +190,11 @@ pipeline {
 
         stage('Get AWS Account Information') {
             steps {
-
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: AWS_CREDENTIALS_ID
                 ]]) {
-
                     script {
-
                         env.AWS_ACCOUNT_ID = sh(
                             script: '''
                                 aws sts get-caller-identity \
@@ -266,11 +220,8 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-
                 script {
-
                     def images = [
-
                         'frontend'             : 'frontend',
                         'gateway'              : 'nginx',
                         'user-service'         : 'services/user-service',
@@ -280,7 +231,6 @@ pipeline {
                     ]
 
                     images.each { name, buildContext ->
-
                         sh """
                             set -e
 
@@ -303,12 +253,10 @@ pipeline {
 
         stage('ECR Login') {
             steps {
-
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: AWS_CREDENTIALS_ID
                 ]]) {
-
                     sh '''
                         set -e
 
@@ -329,9 +277,7 @@ pipeline {
 
         stage('Push Images to ECR') {
             steps {
-
                 script {
-
                     def services = [
                         'frontend',
                         'gateway',
@@ -342,7 +288,6 @@ pipeline {
                     ]
 
                     services.each { svc ->
-
                         def repository =
                             "${ECR_REGISTRY}/${PROJECT_NAME}-${svc}"
 
@@ -371,19 +316,16 @@ pipeline {
         }
 
         // ========================================================
-        // 9. TERRAFORM - DEPLOY ECS WITH NEW IMAGE TAG
+        // 9. DEPLOY NEW IMAGE TAG TO ECS
         // ========================================================
 
         stage('Deploy New Images to ECS') {
             steps {
-
                 dir(TF_DIR) {
-
                     withCredentials([[
                         $class: 'AmazonWebServicesCredentialsBinding',
                         credentialsId: AWS_CREDENTIALS_ID
                     ]]) {
-
                         sh '''
                             set -e
 
@@ -391,6 +333,8 @@ pipeline {
                             echo "Deploying Image Tag to ECS"
                             echo "Image Tag: $IMAGE_TAG"
                             echo "========================================="
+
+                            terraform init -input=false
 
                             terraform plan \
                                 -input=false \
@@ -413,11 +357,8 @@ pipeline {
 
         stage('Get Deployment Information') {
             steps {
-
                 dir(TF_DIR) {
-
                     script {
-
                         env.ECS_CLUSTER = sh(
                             script: 'terraform output -raw ecs_cluster_name',
                             returnStdout: true
@@ -441,12 +382,10 @@ pipeline {
 
         stage('Wait for ECS Stability') {
             steps {
-
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: AWS_CREDENTIALS_ID
                 ]]) {
-
                     sh '''
                         set -e
 
@@ -475,7 +414,6 @@ pipeline {
 
         stage('Post-Deployment Health Check') {
             steps {
-
                 sh '''
                     set -e
 
@@ -497,23 +435,19 @@ pipeline {
 
                             ok=1
                             break
-
                         fi
 
                         echo "Application not ready yet."
 
                         sleep 15
-
                     done
 
                     if [ "$ok" -ne 1 ]; then
-
                         echo "========================================="
                         echo "DEPLOYMENT HEALTH CHECK FAILED"
                         echo "========================================="
 
                         exit 1
-
                     fi
 
                     echo "========================================="
@@ -531,9 +465,7 @@ pipeline {
     post {
 
         success {
-
             script {
-
                 echo """
 ============================================================
 
@@ -553,7 +485,6 @@ http://${env.ALB_DNS_NAME}/
         }
 
         failure {
-
             echo """
 ============================================================
 
@@ -561,15 +492,11 @@ PIPELINE FAILED
 
 Check the failed Jenkins stage above.
 
-Terraform, Docker, ECR, ECS, or the application health
-check may contain the failure details.
-
 ============================================================
 """
         }
 
         always {
-
             sh '''
                 if [ -n "$ECR_REGISTRY" ]; then
                     docker logout "$ECR_REGISTRY" || true
