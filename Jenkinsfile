@@ -95,7 +95,7 @@ pipeline {
         dir('services/user-service') {
             sh '''
                 set -e
-
+                rm -rf .venv-ci
                 "$PYTHON_BIN" -m venv .venv-ci
                 . .venv-ci/bin/activate
 
