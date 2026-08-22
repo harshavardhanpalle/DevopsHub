@@ -2,7 +2,7 @@
 // ============================================================
 // DevOpsHub - Complete CI/CD Pipeline
 //
-// WORKFLOW:
+// ONE CLICK WORKFLOW:
 //
 // Jenkins Build Now
 //      |
@@ -13,7 +13,7 @@
 // Validate Required Files
 //      |
 //      v
-// Run Python Tests using Python 3.12.14
+// Run Python Tests
 //      |
 //      v
 // Terraform Provision Infrastructure
@@ -46,44 +46,29 @@ pipeline {
 
     environment {
 
-        // ========================================================
-        // Jenkins Credentials
-        // ========================================================
-
+        // Jenkins AWS credential ID.
         AWS_CREDENTIALS_ID = 'aws-credentials'
 
-
-        // ========================================================
-        // Project Configuration
-        // ========================================================
-
+        // Project naming.
         PROJECT_NAME = 'devopshub'
 
+        // AWS deployment region.
         AWS_DEFAULT_REGION = 'ap-south-1'
 
+        // Terraform directory.
         TF_DIR = 'infrastructure/terraform'
 
-
-        // ========================================================
-        // Python Configuration
-        //
-        // Python 3.12.14 installed using pyenv.
-        //
-        // This absolute path is required because Jenkins runs as
-        // the "jenkins" user and Ubuntu's default Python is 3.14.
-        // ========================================================
-
+        // Python 3.12 installed through pyenv.
         PYTHON_BIN = '/home/ubuntu/.pyenv/versions/3.12.14/bin/python'
     }
 
     stages {
 
         // ========================================================
-        // 1. CHECKOUT SOURCE CODE
+        // 1. CHECKOUT
         // ========================================================
 
         stage('Checkout') {
-
             steps {
 
                 checkout scm
@@ -98,32 +83,21 @@ pipeline {
                     env.IMAGE_TAG =
                         "${env.GIT_COMMIT_SHORT}-${env.BUILD_NUMBER}"
 
-                    echo "========================================="
-                    echo "Checkout Complete"
-                    echo "========================================="
-
-                    echo "Git Commit: ${env.GIT_COMMIT_SHORT}"
-                    echo "Build Number: ${env.BUILD_NUMBER}"
-                    echo "Image Tag: ${env.IMAGE_TAG}"
+                    echo "Git commit: ${env.GIT_COMMIT_SHORT}"
+                    echo "Image tag: ${env.IMAGE_TAG}"
                 }
             }
         }
-
 
         // ========================================================
         // 2. VALIDATE REQUIRED FILES
         // ========================================================
 
         stage('Validate Required Files') {
-
             steps {
 
                 sh '''
                     set -e
-
-                    echo "========================================="
-                    echo "Validating Required Files"
-                    echo "========================================="
 
                     required_files="
                     frontend/Dockerfile
@@ -150,75 +124,29 @@ pipeline {
                             echo "MISSING REQUIRED FILE: $f"
 
                             missing=1
+
                         fi
 
                     done
 
                     if [ "$missing" -eq 1 ]; then
 
-                        echo "========================================="
-                        echo "VALIDATION FAILED"
-                        echo "========================================="
+                        echo "One or more required files are missing."
 
                         exit 1
 
                     fi
 
-                    echo "========================================="
-                    echo "All Required Files Are Present"
-                    echo "========================================="
+                    echo "All required files are present."
                 '''
             }
         }
 
-
         // ========================================================
-        // 3. VERIFY PYTHON
-        // ========================================================
-
-        stage('Verify Python Environment') {
-
-            steps {
-
-                sh '''
-                    set -e
-
-                    echo "========================================="
-                    echo "Verifying Python Environment"
-                    echo "========================================="
-
-                    echo "Python Binary:"
-                    echo "$PYTHON_BIN"
-
-                    if [ ! -x "$PYTHON_BIN" ]; then
-
-                        echo "ERROR: Python binary does not exist or is not executable."
-
-                        exit 1
-                    fi
-
-                    "$PYTHON_BIN" --version
-
-                    "$PYTHON_BIN" -m pip --version || true
-
-                    echo "========================================="
-                    echo "Python Environment Verified"
-                    echo "========================================="
-                '''
-            }
-        }
-
-
-        // ========================================================
-        // 4. RUN PYTHON TESTS
-        //
-        // Each service gets its own temporary virtual environment.
-        //
-        // Jenkins explicitly uses Python 3.12.14.
+        // 3. RUN TESTS
         // ========================================================
 
         stage('Run Tests') {
-
             steps {
 
                 script {
@@ -241,42 +169,26 @@ pipeline {
                                 echo "Testing ${svc}"
                                 echo "========================================="
 
-                                echo "Creating Python virtual environment..."
+                                echo "Python interpreter:"
+                                ${PYTHON_BIN} --version
 
-                                "\$PYTHON_BIN" -m venv .venv-ci
+                                rm -rf .venv-ci
+
+                                ${PYTHON_BIN} -m venv .venv-ci
 
                                 . .venv-ci/bin/activate
 
-                                echo "Python Version:"
-                                python --version
+                                python -m pip install -q --upgrade pip
 
-                                echo "Upgrading pip..."
-
-                                python -m pip install \
-                                    --upgrade pip
-
-                                echo "Installing dependencies..."
-
-                                python -m pip install \
-                                    -r requirements.txt
-
-                                echo "Running tests..."
+                                python -m pip install -q -r requirements.txt
 
                                 DATABASE_URL=sqlite:///./test_${svc.replace('-', '_')}.db \\
                                 JWT_SECRET=ci-test-secret \\
                                 python -m pytest -q
 
-                                echo "Cleaning up..."
-
-                                deactivate || true
+                                deactivate
 
                                 rm -rf .venv-ci
-
-                                rm -f test_${svc.replace('-', '_')}.db
-
-                                echo "========================================="
-                                echo "${svc} Tests Passed"
-                                echo "========================================="
                             """
                         }
                     }
@@ -284,29 +196,11 @@ pipeline {
             }
         }
 
-
         // ========================================================
-        // 5. TERRAFORM - PROVISION INFRASTRUCTURE
-        //
-        // Creates / updates infrastructure including:
-        //
-        // VPC
-        // Subnets
-        // NAT Gateway
-        // Security Groups
-        // ECR
-        // SQS
-        // Secrets Manager
-        // RDS
-        // IAM
-        // ECS Cluster
-        // Service Connect
-        // Application Load Balancer
-        // ECS Services
+        // 4. TERRAFORM - CREATE / UPDATE INFRASTRUCTURE
         // ========================================================
 
         stage('Terraform Provision Infrastructure') {
-
             steps {
 
                 dir(TF_DIR) {
@@ -325,22 +219,17 @@ pipeline {
 
                             terraform init -input=false
 
-
                             echo "========================================="
                             echo "Terraform Formatting Check"
                             echo "========================================="
 
-                            terraform fmt \
-                                -check \
-                                -recursive
-
+                            terraform fmt -check -recursive
 
                             echo "========================================="
                             echo "Terraform Validation"
                             echo "========================================="
 
                             terraform validate
-
 
                             echo "========================================="
                             echo "Terraform Plan"
@@ -349,7 +238,6 @@ pipeline {
                             terraform plan \
                                 -input=false \
                                 -out=tfplan
-
 
                             echo "========================================="
                             echo "Terraform Apply"
@@ -365,13 +253,11 @@ pipeline {
             }
         }
 
-
         // ========================================================
-        // 6. GET AWS ACCOUNT INFORMATION
+        // 5. GET AWS ACCOUNT INFORMATION
         // ========================================================
 
         stage('Get AWS Account Information') {
-
             steps {
 
                 withCredentials([[
@@ -383,8 +269,6 @@ pipeline {
 
                         env.AWS_ACCOUNT_ID = sh(
                             script: '''
-                                set -e
-
                                 aws sts get-caller-identity \
                                     --query Account \
                                     --output text
@@ -392,57 +276,34 @@ pipeline {
                             returnStdout: true
                         ).trim()
 
-
                         env.ECR_REGISTRY =
                             "${env.AWS_ACCOUNT_ID}.dkr.ecr.${env.AWS_DEFAULT_REGION}.amazonaws.com"
 
-
-                        echo "========================================="
-                        echo "AWS Account Information"
-                        echo "========================================="
-
                         echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
-
-                        echo "AWS Region: ${env.AWS_DEFAULT_REGION}"
-
                         echo "ECR Registry: ${env.ECR_REGISTRY}"
                     }
                 }
             }
         }
 
-
         // ========================================================
-        // 7. DOCKER BUILD - 6 SERVICES
+        // 6. DOCKER BUILD
         // ========================================================
 
         stage('Docker Build') {
-
             steps {
 
                 script {
 
                     def images = [
 
-                        'frontend' :
-                            'frontend',
-
-                        'gateway' :
-                            'nginx',
-
-                        'user-service' :
-                            'services/user-service',
-
-                        'blog-service' :
-                            'services/blog-service',
-
-                        'category-service' :
-                            'services/category-service',
-
-                        'notification-service' :
-                            'services/notification-service'
+                        'frontend'             : 'frontend',
+                        'gateway'              : 'nginx',
+                        'user-service'         : 'services/user-service',
+                        'blog-service'         : 'services/blog-service',
+                        'category-service'     : 'services/category-service',
+                        'notification-service' : 'services/notification-service'
                     ]
-
 
                     images.each { name, buildContext ->
 
@@ -450,30 +311,23 @@ pipeline {
                             set -e
 
                             echo "========================================="
-                            echo "Building Docker Image"
-                            echo "Service: ${name}"
-                            echo "Context: ${buildContext}"
+                            echo "Building ${name}"
                             echo "========================================="
 
                             docker build \
                                 -t ${PROJECT_NAME}-${name}:${IMAGE_TAG} \
                                 ${buildContext}
-
-                            echo "Successfully built:"
-                            echo "${PROJECT_NAME}-${name}:${IMAGE_TAG}"
                         """
                     }
                 }
             }
         }
 
-
         // ========================================================
-        // 8. LOGIN TO AMAZON ECR
+        // 7. LOGIN TO AMAZON ECR
         // ========================================================
 
         stage('ECR Login') {
-
             steps {
 
                 withCredentials([[
@@ -484,105 +338,69 @@ pipeline {
                     sh '''
                         set -e
 
-                        echo "========================================="
-                        echo "Logging Into Amazon ECR"
-                        echo "========================================="
-
                         aws ecr get-login-password \
                             --region "$AWS_DEFAULT_REGION" \
                         | docker login \
                             --username AWS \
                             --password-stdin \
                             "$ECR_REGISTRY"
-
-                        echo "Successfully logged into ECR."
                     '''
                 }
             }
         }
 
-
         // ========================================================
-        // 9. PUSH DOCKER IMAGES TO ECR
-        //
-        // Each image receives:
-        //
-        // 1. Immutable Jenkins build tag
-        // 2. latest tag
+        // 8. PUSH ALL IMAGES TO ECR
         // ========================================================
 
         stage('Push Images to ECR') {
-
             steps {
 
                 script {
 
                     def services = [
-
                         'frontend',
-
                         'gateway',
-
                         'user-service',
-
                         'blog-service',
-
                         'category-service',
-
                         'notification-service'
                     ]
-
 
                     services.each { svc ->
 
                         def repository =
                             "${ECR_REGISTRY}/${PROJECT_NAME}-${svc}"
 
-
                         sh """
                             set -e
 
                             echo "========================================="
                             echo "Pushing ${svc}"
-                            echo "Repository:"
-                            echo "${repository}"
                             echo "========================================="
 
                             docker tag \
                                 ${PROJECT_NAME}-${svc}:${IMAGE_TAG} \
                                 ${repository}:${IMAGE_TAG}
 
-
                             docker tag \
                                 ${PROJECT_NAME}-${svc}:${IMAGE_TAG} \
                                 ${repository}:latest
 
+                            docker push ${repository}:${IMAGE_TAG}
 
-                            docker push \
-                                ${repository}:${IMAGE_TAG}
-
-
-                            docker push \
-                                ${repository}:latest
-
-
-                            echo "${svc} pushed successfully."
+                            docker push ${repository}:latest
                         """
                     }
                 }
             }
         }
 
-
         // ========================================================
-        // 10. DEPLOY NEW IMAGE TAG TO ECS
-        //
-        // Terraform updates ECS task definitions with the new
-        // immutable image tag generated by Jenkins.
+        // 9. TERRAFORM - DEPLOY ECS WITH NEW IMAGE TAG
         // ========================================================
 
         stage('Deploy New Images to ECS') {
-
             steps {
 
                 dir(TF_DIR) {
@@ -596,17 +414,14 @@ pipeline {
                             set -e
 
                             echo "========================================="
-                            echo "Deploying New Images to ECS"
-                            echo "========================================="
-
+                            echo "Deploying Image Tag to ECS"
                             echo "Image Tag: $IMAGE_TAG"
-
+                            echo "========================================="
 
                             terraform plan \
                                 -input=false \
                                 -var="image_tag=$IMAGE_TAG" \
                                 -out=deploy-tfplan
-
 
                             terraform apply \
                                 -input=false \
@@ -618,13 +433,11 @@ pipeline {
             }
         }
 
-
         // ========================================================
-        // 11. GET DEPLOYMENT INFORMATION
+        // 10. GET DEPLOYMENT INFORMATION
         // ========================================================
 
         stage('Get Deployment Information') {
-
             steps {
 
                 dir(TF_DIR) {
@@ -632,49 +445,27 @@ pipeline {
                     script {
 
                         env.ECS_CLUSTER = sh(
-                            script: '''
-                                terraform output \
-                                    -raw \
-                                    ecs_cluster_name
-                            ''',
+                            script: 'terraform output -raw ecs_cluster_name',
                             returnStdout: true
                         ).trim()
-
 
                         env.ALB_DNS_NAME = sh(
-                            script: '''
-                                terraform output \
-                                    -raw \
-                                    alb_dns_name
-                            ''',
+                            script: 'terraform output -raw alb_dns_name',
                             returnStdout: true
                         ).trim()
 
-
-                        echo "========================================="
-                        echo "Deployment Information"
-                        echo "========================================="
-
-                        echo "ECS Cluster:"
-                        echo "${env.ECS_CLUSTER}"
-
-                        echo "ALB DNS Name:"
-                        echo "${env.ALB_DNS_NAME}"
-
-                        echo "Application URL:"
-                        echo "http://${env.ALB_DNS_NAME}/"
+                        echo "ECS Cluster: ${env.ECS_CLUSTER}"
+                        echo "ALB DNS: ${env.ALB_DNS_NAME}"
                     }
                 }
             }
         }
 
-
         // ========================================================
-        // 12. WAIT FOR ECS SERVICES TO BECOME STABLE
+        // 11. WAIT FOR ECS STABILITY
         // ========================================================
 
         stage('Wait for ECS Stability') {
-
             steps {
 
                 withCredentials([[
@@ -686,11 +477,8 @@ pipeline {
                         set -e
 
                         echo "========================================="
-                        echo "Waiting For ECS Services"
+                        echo "Waiting for ECS Services"
                         echo "========================================="
-
-                        echo "Cluster: $ECS_CLUSTER"
-
 
                         aws ecs wait services-stable \
                             --region "$AWS_DEFAULT_REGION" \
@@ -702,25 +490,16 @@ pipeline {
                                 "${PROJECT_NAME}-blog-service" \
                                 "${PROJECT_NAME}-category-service" \
                                 "${PROJECT_NAME}-notification-service"
-
-
-                        echo "========================================="
-                        echo "All ECS Services Are Stable"
-                        echo "========================================="
                     '''
                 }
             }
         }
 
-
         // ========================================================
-        // 13. POST-DEPLOYMENT HEALTH CHECK
-        //
-        // Jenkins attempts the ALB endpoint up to 10 times.
+        // 12. POST-DEPLOYMENT HEALTH CHECK
         // ========================================================
 
         stage('Post-Deployment Health Check') {
-
             steps {
 
                 sh '''
@@ -730,64 +509,46 @@ pipeline {
                     echo "Checking Live Application"
                     echo "========================================="
 
-                    echo "URL:"
-                    echo "http://$ALB_DNS_NAME/"
-
+                    echo "URL: http://$ALB_DNS_NAME/"
 
                     ok=0
 
-
                     for i in 1 2 3 4 5 6 7 8 9 10; do
 
-                        echo "========================================="
+                        echo "Health check attempt $i..."
 
-                        echo "Health Check Attempt $i of 10"
-
-                        echo "========================================="
-
-
-                        if curl \
-                            -sSf \
+                        if curl -sSf \
                             -o /dev/null \
                             "http://$ALB_DNS_NAME/"; then
 
                             ok=1
-
                             break
 
                         fi
 
-
-                        echo "Application is not ready yet."
+                        echo "Application not ready yet."
 
                         sleep 15
 
                     done
 
-
                     if [ "$ok" -ne 1 ]; then
 
                         echo "========================================="
-
                         echo "DEPLOYMENT HEALTH CHECK FAILED"
-
                         echo "========================================="
 
                         exit 1
 
                     fi
 
-
                     echo "========================================="
-
                     echo "DEPLOYMENT HEALTH CHECK PASSED"
-
                     echo "========================================="
                 '''
             }
         }
     }
-
 
     // ============================================================
     // POST BUILD ACTIONS
@@ -804,27 +565,18 @@ pipeline {
 
 DEPLOYMENT SUCCESSFUL
 
-Project:
-${env.PROJECT_NAME}
-
-Git Commit:
-${env.GIT_COMMIT_SHORT}
+Project: ${env.PROJECT_NAME}
 
 Image Tag:
 ${env.IMAGE_TAG}
 
-ECS Cluster:
-${env.ECS_CLUSTER}
-
 Live Application:
-
 http://${env.ALB_DNS_NAME}/
 
 ============================================================
 """
             }
         }
-
 
         failure {
 
@@ -833,46 +585,23 @@ http://${env.ALB_DNS_NAME}/
 
 PIPELINE FAILED
 
-Check the Jenkins console output.
+Check the failed Jenkins stage above.
 
-The failure may be in one of these areas:
-
-- Python tests
-- Terraform
-- AWS credentials
-- Docker build
-- Amazon ECR
-- ECS deployment
-- ECS service stability
-- Application Load Balancer health check
-
-Fix the exact failed stage shown in Jenkins.
+Terraform, Docker, ECR, ECS, or the application health
+check may contain the failure details.
 
 ============================================================
 """
         }
 
-
         always {
 
             sh '''
-                echo "========================================="
-                echo "Pipeline Cleanup"
-                echo "========================================="
-
                 if [ -n "$ECR_REGISTRY" ]; then
-
-                    docker logout \
-                        "$ECR_REGISTRY" || true
-
+                    docker logout "$ECR_REGISTRY" || true
                 fi
 
-
-                docker image prune \
-                    -f || true
-
-
-                echo "Cleanup Complete."
+                docker image prune -f || true
             '''
         }
     }
