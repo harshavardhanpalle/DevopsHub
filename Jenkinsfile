@@ -92,43 +92,30 @@ pipeline {
         // ========================================================
 
         stage('Run Tests') {
-            steps {
-                dir('services/user-service') {
-                    sh '''
-                        set -e
+    steps {
+        dir('services/user-service') {
+            sh '''
+                set -e
 
-                        echo "========================================="
-                        echo "Running Python Tests"
-                        echo "========================================="
+                "$PYTHON_BIN" -m venv .venv-ci
+                . .venv-ci/bin/activate
 
-                        echo "Using Python:"
-                        "$PYTHON_BIN" --version
+                python --version
 
-                        rm -rf .venv-ci
+                pip install --upgrade pip
+                pip install -r requirements.txt
 
-                        "$PYTHON_BIN" -m venv .venv-ci
+                DATABASE_URL=sqlite:///./test_user_service.db \
+                JWT_SECRET=ci-test-secret \
+                python -m pytest -q
 
-                        . .venv-ci/bin/activate
-
-                        python --version
-
-                        python -m pip install --upgrade pip
-
-                        python -m pip install -r requirements.txt
-
-                        DATABASE_URL=sqlite:///./test_user_service.db \
-                        JWT_SECRET=ci-test-secret \
-                        python -m pytest -q
-
-                        deactivate
-
-                        rm -rf .venv-ci
-
-                        echo "Python tests completed successfully."
-                    '''
-                }
-            }
+                deactivate
+                rm -rf .venv-ci
+            '''
         }
+    }
+}
+        
 
         // ========================================================
         // 4. TERRAFORM - CREATE / UPDATE INFRASTRUCTURE
