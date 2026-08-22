@@ -98,18 +98,16 @@ pipeline {
                 rm -rf .venv-ci
                 "$PYTHON_BIN" -m venv .venv-ci
                 . .venv-ci/bin/activate
-
                 python --version
-
                 pip install --upgrade pip
                 pip install -r requirements.txt
-
+                rm -f test_user_service.db
                 DATABASE_URL=sqlite:///./test_user_service.db \
                 JWT_SECRET=ci-test-secret \
                 python -m pytest -q
-
                 deactivate
                 rm -rf .venv-ci
+                rm -f test_user_service.db
             '''
         }
     }
