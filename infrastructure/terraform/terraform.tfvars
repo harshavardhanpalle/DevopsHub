@@ -26,7 +26,7 @@ db_multi_az            = false
 db_master_username     = "devopshub"
 db_skip_final_snapshot = true
 
-sqs_queue_name         = "notifications"
-sqs_max_receive_count  = 5
+sqs_queue_name        = "notifications"
+sqs_max_receive_count = 5
 
 jwt_expire_minutes = 60

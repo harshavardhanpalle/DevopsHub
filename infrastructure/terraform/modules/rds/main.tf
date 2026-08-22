@@ -53,11 +53,11 @@ resource "aws_db_instance" "this" {
   storage_type      = "gp3"
   storage_encrypted = true
 
-  db_name  = "postgres" # master/admin database only; each service's own DB
-                         # (userdb/blogdb/categorydb/notificationdb) is
-                         # created by db-init/01-create-databases.sh's SQL,
-                         # run once against this endpoint -- see README /
-                         # IMPLEMENTATION_STATUS "EXACT NEXT STEP".
+  db_name = "postgres" # master/admin database only; each service's own DB
+  # (userdb/blogdb/categorydb/notificationdb) is
+  # created by db-init/01-create-databases.sh's SQL,
+  # run once against this endpoint -- see README /
+  # IMPLEMENTATION_STATUS "EXACT NEXT STEP".
   username = var.master_username
   password = random_password.master.result
 

@@ -35,12 +35,12 @@ locals {
 module "vpc" {
   source = "./modules/vpc"
 
-  project_name          = var.project_name
-  vpc_cidr              = var.vpc_cidr
-  availability_zones    = local.availability_zones
-  public_subnet_cidrs   = var.public_subnet_cidrs
-  private_subnet_cidrs  = var.private_subnet_cidrs
-  enable_nat_gateway    = var.enable_nat_gateway
+  project_name         = var.project_name
+  vpc_cidr             = var.vpc_cidr
+  availability_zones   = local.availability_zones
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+  enable_nat_gateway   = var.enable_nat_gateway
 }
 
 module "security_group" {
@@ -67,9 +67,9 @@ module "ecr" {
 module "sqs" {
   source = "./modules/sqs"
 
-  project_name       = var.project_name
-  queue_name         = var.sqs_queue_name
-  max_receive_count  = var.sqs_max_receive_count
+  project_name      = var.project_name
+  queue_name        = var.sqs_queue_name
+  max_receive_count = var.sqs_max_receive_count
 }
 
 #############################################
@@ -101,15 +101,15 @@ resource "aws_secretsmanager_secret_version" "jwt_secret" {
 module "rds" {
   source = "./modules/rds"
 
-  project_name            = var.project_name
-  private_subnet_ids      = module.vpc.private_subnet_ids
-  security_group_id       = module.security_group.rds_security_group_id
-  instance_class           = var.db_instance_class
-  allocated_storage       = var.db_allocated_storage
-  multi_az                = var.db_multi_az
-  master_username          = var.db_master_username
-  skip_final_snapshot     = var.db_skip_final_snapshot
-  service_database_names  = ["userdb", "blogdb", "categorydb", "notificationdb"]
+  project_name           = var.project_name
+  private_subnet_ids     = module.vpc.private_subnet_ids
+  security_group_id      = module.security_group.rds_security_group_id
+  instance_class         = var.db_instance_class
+  allocated_storage      = var.db_allocated_storage
+  multi_az               = var.db_multi_az
+  master_username        = var.db_master_username
+  skip_final_snapshot    = var.db_skip_final_snapshot
+  service_database_names = ["userdb", "blogdb", "categorydb", "notificationdb"]
 }
 
 #############################################
@@ -118,7 +118,7 @@ module "rds" {
 module "iam" {
   source = "./modules/iam"
 
-  project_name = var.project_name
+  project_name  = var.project_name
   sqs_queue_arn = module.sqs.queue_arn
   secrets_manager_secret_arns = concat(
     [aws_secretsmanager_secret.jwt_secret.arn],
@@ -141,10 +141,10 @@ module "ecs_cluster" {
 module "alb" {
   source = "./modules/alb"
 
-  project_name       = var.project_name
-  vpc_id             = module.vpc.vpc_id
-  public_subnet_ids  = module.vpc.public_subnet_ids
-  security_group_id  = module.security_group.alb_security_group_id
+  project_name      = var.project_name
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = module.vpc.public_subnet_ids
+  security_group_id = module.security_group.alb_security_group_id
 }
 
 #############################################
@@ -157,21 +157,21 @@ module "alb" {
 module "frontend_service" {
   source = "./modules/ecs_service"
 
-  project_name        = var.project_name
-  service_name        = "frontend"
-  container_image     = "${module.ecr.repository_urls["frontend"]}:${var.image_tag}"
-  container_port      = 80
-  cpu                 = var.task_cpu
-  memory              = var.task_memory
-  desired_count       = var.desired_count
-  cluster_id          = module.ecs_cluster.cluster_id
-  cluster_name        = module.ecs_cluster.cluster_name
-  namespace_arn       = module.ecs_cluster.namespace_arn
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  security_group_ids  = [module.security_group.ecs_tasks_security_group_id]
-  execution_role_arn  = module.iam.ecs_task_execution_role_arn
-  target_group_arn    = module.alb.frontend_target_group_arn
-  aws_region          = var.aws_region
+  project_name       = var.project_name
+  service_name       = "frontend"
+  container_image    = "${module.ecr.repository_urls["frontend"]}:${var.image_tag}"
+  container_port     = 80
+  cpu                = var.task_cpu
+  memory             = var.task_memory
+  desired_count      = var.desired_count
+  cluster_id         = module.ecs_cluster.cluster_id
+  cluster_name       = module.ecs_cluster.cluster_name
+  namespace_arn      = module.ecs_cluster.namespace_arn
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_ids = [module.security_group.ecs_tasks_security_group_id]
+  execution_role_arn = module.iam.ecs_task_execution_role_arn
+  target_group_arn   = module.alb.frontend_target_group_arn
+  aws_region         = var.aws_region
 }
 
 # -- gateway: plain nginx API gateway, internal only (reached by frontend
@@ -179,20 +179,20 @@ module "frontend_service" {
 module "gateway_service" {
   source = "./modules/ecs_service"
 
-  project_name        = var.project_name
-  service_name        = "gateway"
-  container_image     = "${module.ecr.repository_urls["gateway"]}:${var.image_tag}"
-  container_port      = 8080
-  cpu                 = var.task_cpu
-  memory              = var.task_memory
-  desired_count       = var.desired_count
-  cluster_id          = module.ecs_cluster.cluster_id
-  cluster_name        = module.ecs_cluster.cluster_name
-  namespace_arn       = module.ecs_cluster.namespace_arn
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  security_group_ids  = [module.security_group.ecs_tasks_security_group_id]
-  execution_role_arn  = module.iam.ecs_task_execution_role_arn
-  aws_region          = var.aws_region
+  project_name       = var.project_name
+  service_name       = "gateway"
+  container_image    = "${module.ecr.repository_urls["gateway"]}:${var.image_tag}"
+  container_port     = 8080
+  cpu                = var.task_cpu
+  memory             = var.task_memory
+  desired_count      = var.desired_count
+  cluster_id         = module.ecs_cluster.cluster_id
+  cluster_name       = module.ecs_cluster.cluster_name
+  namespace_arn      = module.ecs_cluster.namespace_arn
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_ids = [module.security_group.ecs_tasks_security_group_id]
+  execution_role_arn = module.iam.ecs_task_execution_role_arn
+  aws_region         = var.aws_region
 
   depends_on = [module.user_service, module.blog_service, module.category_service, module.notification_service]
 }
@@ -200,26 +200,26 @@ module "gateway_service" {
 module "user_service" {
   source = "./modules/ecs_service"
 
-  project_name        = var.project_name
-  service_name        = "user-service"
-  container_image     = "${module.ecr.repository_urls["user-service"]}:${var.image_tag}"
-  container_port      = 8001
-  cpu                 = var.task_cpu
-  memory              = var.task_memory
-  desired_count       = var.desired_count
-  cluster_id          = module.ecs_cluster.cluster_id
-  cluster_name        = module.ecs_cluster.cluster_name
-  namespace_arn       = module.ecs_cluster.namespace_arn
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  security_group_ids  = [module.security_group.ecs_tasks_security_group_id]
-  execution_role_arn  = module.iam.ecs_task_execution_role_arn
-  task_role_arn       = module.iam.app_task_role_arn
-  aws_region          = var.aws_region
+  project_name       = var.project_name
+  service_name       = "user-service"
+  container_image    = "${module.ecr.repository_urls["user-service"]}:${var.image_tag}"
+  container_port     = 8001
+  cpu                = var.task_cpu
+  memory             = var.task_memory
+  desired_count      = var.desired_count
+  cluster_id         = module.ecs_cluster.cluster_id
+  cluster_name       = module.ecs_cluster.cluster_name
+  namespace_arn      = module.ecs_cluster.namespace_arn
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_ids = [module.security_group.ecs_tasks_security_group_id]
+  execution_role_arn = module.iam.ecs_task_execution_role_arn
+  task_role_arn      = module.iam.app_task_role_arn
+  aws_region         = var.aws_region
 
   environment = {
     JWT_EXPIRE_MINUTES = tostring(var.jwt_expire_minutes)
-    AWS_REGION          = var.aws_region
-    SQS_QUEUE_URL       = module.sqs.queue_url
+    AWS_REGION         = var.aws_region
+    SQS_QUEUE_URL      = module.sqs.queue_url
   }
 
   secrets = {
@@ -231,21 +231,21 @@ module "user_service" {
 module "blog_service" {
   source = "./modules/ecs_service"
 
-  project_name        = var.project_name
-  service_name        = "blog-service"
-  container_image     = "${module.ecr.repository_urls["blog-service"]}:${var.image_tag}"
-  container_port      = 8002
-  cpu                 = var.task_cpu
-  memory              = var.task_memory
-  desired_count       = var.desired_count
-  cluster_id          = module.ecs_cluster.cluster_id
-  cluster_name        = module.ecs_cluster.cluster_name
-  namespace_arn       = module.ecs_cluster.namespace_arn
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  security_group_ids  = [module.security_group.ecs_tasks_security_group_id]
-  execution_role_arn  = module.iam.ecs_task_execution_role_arn
-  task_role_arn       = module.iam.app_task_role_arn
-  aws_region          = var.aws_region
+  project_name       = var.project_name
+  service_name       = "blog-service"
+  container_image    = "${module.ecr.repository_urls["blog-service"]}:${var.image_tag}"
+  container_port     = 8002
+  cpu                = var.task_cpu
+  memory             = var.task_memory
+  desired_count      = var.desired_count
+  cluster_id         = module.ecs_cluster.cluster_id
+  cluster_name       = module.ecs_cluster.cluster_name
+  namespace_arn      = module.ecs_cluster.namespace_arn
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_ids = [module.security_group.ecs_tasks_security_group_id]
+  execution_role_arn = module.iam.ecs_task_execution_role_arn
+  task_role_arn      = module.iam.app_task_role_arn
+  aws_region         = var.aws_region
 
   environment = {
     AWS_REGION    = var.aws_region
@@ -261,20 +261,20 @@ module "blog_service" {
 module "category_service" {
   source = "./modules/ecs_service"
 
-  project_name        = var.project_name
-  service_name        = "category-service"
-  container_image     = "${module.ecr.repository_urls["category-service"]}:${var.image_tag}"
-  container_port      = 8003
-  cpu                 = var.task_cpu
-  memory              = var.task_memory
-  desired_count       = var.desired_count
-  cluster_id          = module.ecs_cluster.cluster_id
-  cluster_name        = module.ecs_cluster.cluster_name
-  namespace_arn       = module.ecs_cluster.namespace_arn
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  security_group_ids  = [module.security_group.ecs_tasks_security_group_id]
-  execution_role_arn  = module.iam.ecs_task_execution_role_arn
-  aws_region          = var.aws_region
+  project_name       = var.project_name
+  service_name       = "category-service"
+  container_image    = "${module.ecr.repository_urls["category-service"]}:${var.image_tag}"
+  container_port     = 8003
+  cpu                = var.task_cpu
+  memory             = var.task_memory
+  desired_count      = var.desired_count
+  cluster_id         = module.ecs_cluster.cluster_id
+  cluster_name       = module.ecs_cluster.cluster_name
+  namespace_arn      = module.ecs_cluster.namespace_arn
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_ids = [module.security_group.ecs_tasks_security_group_id]
+  execution_role_arn = module.iam.ecs_task_execution_role_arn
+  aws_region         = var.aws_region
 
   secrets = {
     DATABASE_URL = module.rds.database_url_secret_arns["categorydb"]
@@ -285,21 +285,21 @@ module "category_service" {
 module "notification_service" {
   source = "./modules/ecs_service"
 
-  project_name        = var.project_name
-  service_name        = "notification-service"
-  container_image     = "${module.ecr.repository_urls["notification-service"]}:${var.image_tag}"
-  container_port      = 8004
-  cpu                 = var.task_cpu
-  memory              = var.task_memory
-  desired_count       = var.desired_count
-  cluster_id          = module.ecs_cluster.cluster_id
-  cluster_name        = module.ecs_cluster.cluster_name
-  namespace_arn       = module.ecs_cluster.namespace_arn
-  private_subnet_ids  = module.vpc.private_subnet_ids
-  security_group_ids  = [module.security_group.ecs_tasks_security_group_id]
-  execution_role_arn  = module.iam.ecs_task_execution_role_arn
-  task_role_arn       = module.iam.app_task_role_arn
-  aws_region          = var.aws_region
+  project_name       = var.project_name
+  service_name       = "notification-service"
+  container_image    = "${module.ecr.repository_urls["notification-service"]}:${var.image_tag}"
+  container_port     = 8004
+  cpu                = var.task_cpu
+  memory             = var.task_memory
+  desired_count      = var.desired_count
+  cluster_id         = module.ecs_cluster.cluster_id
+  cluster_name       = module.ecs_cluster.cluster_name
+  namespace_arn      = module.ecs_cluster.namespace_arn
+  private_subnet_ids = module.vpc.private_subnet_ids
+  security_group_ids = [module.security_group.ecs_tasks_security_group_id]
+  execution_role_arn = module.iam.ecs_task_execution_role_arn
+  task_role_arn      = module.iam.app_task_role_arn
+  aws_region         = var.aws_region
 
   environment = {
     AWS_REGION            = var.aws_region
