@@ -46,7 +46,7 @@ variable "master_username" {
 variable "backup_retention_period" {
   description = "Days to retain automated backups"
   type        = number
-  default     = 7
+  default     = 1
 }
 
 variable "skip_final_snapshot" {
