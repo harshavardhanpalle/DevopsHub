@@ -39,7 +39,7 @@ resource "aws_security_group" "ecs_tasks" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "ALB -> frontend (port 80)"
+    description     = "ALB to frontend (port 80)"
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
@@ -79,7 +79,7 @@ resource "aws_security_group" "rds" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "ECS tasks -> PostgreSQL"
+    description     = "ECS tasks to PostgreSQL"
     from_port       = var.rds_port
     to_port         = var.rds_port
     protocol        = "tcp"
