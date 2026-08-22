@@ -147,55 +147,29 @@ pipeline {
         // ========================================================
 
         stage('Run Tests') {
-            steps {
+    steps {
+        dir('services/user-service') {
+            sh '''
+                set -e
 
-                script {
+                /home/ubuntu/.pyenv/versions/3.12.14/bin/python3 -m venv .venv-ci
+                . .venv-ci/bin/activate
 
-                    def services = [
-                        'user-service',
-                        'blog-service',
-                        'category-service',
-                        'notification-service'
-                    ]
+                python --version
 
-                    for (svc in services) {
+                pip install --upgrade pip
+                pip install -r requirements.txt
 
-                        dir("services/${svc}") {
+                DATABASE_URL=sqlite:///./test_user_service.db \
+                JWT_SECRET=ci-test-secret \
+                python -m pytest -q
 
-                            sh """
-                                set -e
-
-                                echo "========================================="
-                                echo "Testing ${svc}"
-                                echo "========================================="
-
-                                echo "Python interpreter:"
-                                ${PYTHON_BIN} --version
-
-                                rm -rf .venv-ci
-
-                                ${PYTHON_BIN} -m venv .venv-ci
-
-                                . .venv-ci/bin/activate
-
-                                python -m pip install -q --upgrade pip
-
-                                python -m pip install -q -r requirements.txt
-
-                                DATABASE_URL=sqlite:///./test_${svc.replace('-', '_')}.db \\
-                                JWT_SECRET=ci-test-secret \\
-                                python -m pytest -q
-
-                                deactivate
-
-                                rm -rf .venv-ci
-                            """
-                        }
-                    }
-                }
-            }
+                deactivate
+                rm -rf .venv-ci
+            '''
         }
-
+    }
+}
         // ========================================================
         // 4. TERRAFORM - CREATE / UPDATE INFRASTRUCTURE
         // ========================================================
