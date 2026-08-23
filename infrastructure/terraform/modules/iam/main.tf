@@ -75,3 +75,26 @@ resource "aws_iam_role_policy" "app_task_sqs" {
   role   = aws_iam_role.app_task.id
   policy = data.aws_iam_policy_document.sqs_access.json
 }
+
+#############################################
+# SSM permissions -- required for `aws ecs execute-command` (ECS Exec) to
+# open a shell inside running app containers for debugging/inspection.
+#############################################
+data "aws_iam_policy_document" "ssm_exec" {
+  statement {
+    sid = "AllowECSExec"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "app_task_ssm_exec" {
+  name   = "${var.project_name}-app-task-ssm-exec"
+  role   = aws_iam_role.app_task.id
+  policy = data.aws_iam_policy_document.ssm_exec.json
+}
